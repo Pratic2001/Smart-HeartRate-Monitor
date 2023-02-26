@@ -1,41 +1,33 @@
-/*
-
- * VARIABLES
-
- * count: variable to hold count of rr peaks detected in 10 seconds
-
- * flag: variable that prevents multiple rr peak detections in a single heatbeat
-
- * hr: HeartRate (initialised to 72)
-
- * hrv: Heart Rate variability (takes 10-15 seconds to stabilise)
-
- * instance1: instance when heart beat first time
-
- * interval: interval between second beat and first beat
-
- * timer: variable to hold the time after which hr is calculated
-
- * value: raw sensor value of output pin
-
- */
-
 #include <SoftwareSerial.h>
 #include "LowPower.h"
 
 long instance1 = 0, timer;
 double hrv = 1, hr = 72, interval = 0;
 int value = 0, count = 0;  
-
+float threshold = 0; //To identify R peak
 bool flag = 0;
+bool initialized = 0;
 
 #define shutdown_pin 12
 #define cmd_enable_pin 6 
-#define threshold 160 // to identify R peak
 #define timer_value 10000 // 10 seconds timer to calculate hr
 
 SoftwareSerial Serial1(4 , 5); //(Rx , Tx)
 
+void __init__(){
+  Serial.println("Initializing...");
+  delay(15000);
+  int currVal = 0;
+  int currMax = 0;
+  int start = millis();
+  while((millis() - start) <= 8000){
+    currVal = analogRead(A0);
+    if(currVal > currMax)
+      currMax = currVal;  
+  }  
+  threshold = (float)(currMax) * 0.9;
+  initialized = 1;
+}
 
 void on_Event(){
   String rdy = "";
@@ -44,13 +36,9 @@ void on_Event(){
   digitalWrite(cmd_enable_pin , HIGH);
   delay(10);
   digitalWrite(cmd_enable_pin , LOW);
-
   delay(10000);
-
   Serial1.println("_");
-
-  delay(20000);
-  
+  delay(20000);  
   for(int i = 0; i < 10; i++)
     LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
 }
@@ -64,11 +52,9 @@ void setup() {
   pinMode(10 , OUTPUT);
 
   digitalWrite(cmd_enable_pin , LOW);
-
 }
 
 void loop() {
-
   digitalWrite(cmd_enable_pin , LOW);
   digitalWrite(shutdown_pin , HIGH);
   
@@ -78,18 +64,19 @@ void loop() {
     digitalWrite(shutdown_pin, LOW); //standby mode
     instance1 = micros();
     timer = millis();
+    initialized = 0;
     Serial.println("Power Down");
     for(int i = 0; i < 3; i++)
       LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
   }
 
   else {
-   
+    if(!initialized)
+      __init__();
     digitalWrite(10 , HIGH);
     digitalWrite(shutdown_pin, HIGH); //normal mode
  
     value = analogRead(A0);
-    value = map(value, 250, 400, 0, 100); //to flatten the ecg values a bit
     if((value > threshold) && (!flag)) {
       count++;  
       flag = 1;
@@ -108,7 +95,7 @@ void loop() {
     }
 
     hrv = hr/60 - interval/1000000;
-    //if(hr >= 70 && hrv <= 0.9)
+    if(hr >= 120 && hrv <= 0.05)
       on_Event();
  
     Serial.print(hr);
